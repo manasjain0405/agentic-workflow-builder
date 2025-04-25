@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, {useCallback, useState, useEffect} from 'react';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,8 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TOOLS_LIST, HUMAN_NODE_TYPES } from '@/lib/constants';
-import type { WorkflowNode, Tool, HumanNodeType } from '@/lib/types';
+import { TOOLS_LIST, SOP_FUNCTION_LIST, HUMAN_NODE_TYPES } from '@/lib/constants';
+import type { WorkflowNode, Tool, SopFunction, HumanNodeType } from '@/lib/types';
 import { Button } from './ui/button';
 import { Plus, Trash2 } from 'lucide-react';
 
@@ -22,6 +22,18 @@ interface ConfigPanelProps {
 }
 
 export const ConfigPanel = ({ selectedNode, selectedNodeId, onNodeUpdate }: ConfigPanelProps) => {
+    // Added state to track the current tool selection value
+  const [toolSelectValue, setToolSelectValue] = useState<string>("");
+  const [sopSelectValue, setSopSelectValue] = useState<string>("");
+  // Reset the tool selector value whenever selected node changes or tools are updated
+  useEffect(() => {
+    setToolSelectValue("");
+  }, [selectedNode?.node_name, selectedNode?.tools]);
+
+  useEffect(() => {
+    setSopSelectValue("");
+  }, [selectedNode?.node_name, selectedNode?.sop_functions]);
+
   if (!selectedNode) {
     return (
       <div className="w-[300px] border-l p-4 bg-white dark:bg-gray-800 dark:text-white h-full">
@@ -58,12 +70,32 @@ export const ConfigPanel = ({ selectedNode, selectedNodeId, onNodeUpdate }: Conf
     if (!currentTools.includes(value)) {
       updateNode({ tools: [...currentTools, value] });
     }
+    // Reset the selection value after adding the tool
+    setToolSelectValue("");
+  };
+
+  const handleSOPSelection = (value: SopFunction) => {
+    console.log("Change in SOP called")
+    const currentSOPs = selectedNode.sop_functions || [];
+    if (!currentSOPs.includes(value)) {
+      updateNode({ sop_functions: [...currentSOPs, value] });
+    }
+    setSopSelectValue("")
   };
 
   const removeTool = (toolToRemove: Tool) => {
     const currentTools = selectedNode.tools || [];
     updateNode({ tools: currentTools.filter(tool => tool !== toolToRemove) });
+    // Reset the selection value after removing a tool
+    setToolSelectValue("");
   };
+
+  const removeSOP = (sopToRemove: SopFunction) => {
+    const currentSop = selectedNode.sop_functions || [];
+    updateNode({ sop_functions: currentSop.filter(sop => sop !== sopToRemove) });
+    setSopSelectValue("")
+  };
+
 
   return (
     <div className="w-[300px] border-l p-4 bg-white dark:bg-gray-800 dark:text-white h-full overflow-y-auto">
@@ -105,7 +137,7 @@ export const ConfigPanel = ({ selectedNode, selectedNodeId, onNodeUpdate }: Conf
                 onClick={addHumanNode} 
                 variant="outline" 
                 size="sm"
-                className="h-8 dark:bg-gray-700 dark:border-gray-600 dark:text-white hover:dark:bg-gray-600"
+                className="h-8 dark:border-gray-600"
               >
                 <Plus className="h-4 w-4 mr-1" /> Add
               </Button>
@@ -178,6 +210,7 @@ export const ConfigPanel = ({ selectedNode, selectedNodeId, onNodeUpdate }: Conf
         )}
 
         {selectedNode.type === "AGENT" && (
+          <>
           <div className="space-y-2">
             <Label>Tools</Label>
             <div className="flex flex-wrap gap-2 mb-2">
@@ -196,23 +229,73 @@ export const ConfigPanel = ({ selectedNode, selectedNodeId, onNodeUpdate }: Conf
                 </div>
               ))}
             </div>
-            <Select onValueChange={handleToolSelection}>
+            <Select 
+              value={toolSelectValue} 
+              onValueChange={(value) => {
+                handleToolSelection(value as Tool);
+              }}
+            >
               <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600">
                 <SelectValue placeholder="Add tool" />
               </SelectTrigger>
               <SelectContent className="dark:bg-gray-700">
-                {TOOLS_LIST.map((tool) => (
-                  <SelectItem 
-                    key={tool} 
-                    value={tool}
-                    disabled={(selectedNode.tools || []).includes(tool)}
+                {TOOLS_LIST.map((tool) => {
+                  const isDisabled = (selectedNode.tools || []).includes(tool);
+                  return (
+                    <SelectItem 
+                      key={tool} 
+                      value={tool}
+                      disabled={isDisabled}
+                    >
+                      {tool}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>SOP Functions</Label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {(selectedNode.sop_functions || []).map((sop_function) => (
+                <div 
+                  key={sop_function}
+                  className="flex items-center gap-1 bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded-md"
+                >
+                  <span className="text-sm">{sop_function}</span>
+                  <button
+                    onClick={() => removeSOP(sop_function)}
+                    className="text-red-500 hover:text-red-700"
                   >
-                    {tool}
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <Select 
+              value={sopSelectValue} 
+              onValueChange={(value) => {
+                handleSOPSelection(value as SopFunction);
+              }}
+            >
+              <SelectTrigger className="dark:bg-gray-700 dark:border-gray-600">
+                <SelectValue placeholder="Add SOP" />
+              </SelectTrigger>
+              <SelectContent className="dark:bg-gray-700">
+                {SOP_FUNCTION_LIST.map((sop_function) => (
+                  <SelectItem 
+                    key={sop_function} 
+                    value={sop_function}
+                    disabled={(selectedNode.sop_functions || []).includes(sop_function)}
+                  >
+                    {sop_function}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+          </>
         )}
       </div>
     </div>

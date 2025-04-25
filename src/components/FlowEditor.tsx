@@ -1,5 +1,5 @@
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import {
   ReactFlow,
   addEdge,
@@ -27,7 +27,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Save, Trash2, Copy } from "lucide-react";
+import { Plus, Save, Trash2, Copy, Download, Upload } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 
 type FlowNode = {
@@ -48,6 +48,13 @@ const nodeTypes: NodeTypes = {
 
 const initialNodes: FlowNode[] = [];
 
+function createNodeIdToNameMap(nodes: Node[]): Record<string, string> {
+  return nodes.reduce((map, node) => {
+    map[node.id] = node.data.flowNode.node_name;
+    return map;
+  }, {} as Record<string, string>);
+}
+
 export const FlowEditor = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -55,6 +62,7 @@ export const FlowEditor = () => {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showJson, setShowJson] = useState(false);
   const [workflowJson, setWorkflowJson] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -67,18 +75,29 @@ export const FlowEditor = () => {
   };
 
   const handleExport = () => {
+    const id_name_map = createNodeIdToNameMap(nodes)
+    console.log(id_name_map)
     const workflowData: WorkflowData = {
       nodes: nodes.map(node => node.data.flowNode),
       adjacency_list: edges.reduce((acc: Record<string, string[]>, edge: Edge) => {
-        if (!acc[edge.source]) {
-          acc[edge.source] = [];
+        if (!acc[id_name_map[edge.source]]) {
+          acc[id_name_map[edge.source]] = [];
         }
-        acc[edge.source].push(edge.target);
+        acc[id_name_map[edge.source]].push(id_name_map[edge.target]);
         return acc;
       }, {})
     };
     
-    setWorkflowJson(JSON.stringify(workflowData, null, 2));
+    // Store the complete state for restoration
+    const completeState = {
+      workflowData,
+      flowState: {
+        nodes,
+        edges
+      }
+    };
+    
+    setWorkflowJson(JSON.stringify(completeState, null, 2));
     setShowJson(true);
   };
 
@@ -91,25 +110,72 @@ export const FlowEditor = () => {
     }
   };
 
+    const handleDownloadJson = () => {
+    const element = document.createElement("a");
+    const file = new Blob([workflowJson], { type: "application/json" });
+    element.href = URL.createObjectURL(file);
+    element.download = "workflow.json";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    toast.success("JSON file downloaded");
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const parsedContent = JSON.parse(content);
+        
+        if (parsedContent.flowState) {
+          // Restore the complete flow state
+          setNodes(parsedContent.flowState.nodes);
+          setEdges(parsedContent.flowState.edges);
+          toast.success("Workflow loaded successfully");
+        } else {
+          toast.error("Invalid workflow format");
+        }
+      } catch (err) {
+        console.error("Error parsing JSON file:", err);
+        toast.error("Failed to load workflow");
+      }
+    };
+    reader.readAsText(file);
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleSaveWorkflow = () => {
     console.log("Saving workflow:", workflowJson);
     setShowJson(false);
   };
 
   const onNodeUpdate = (updatedFlowNode: WorkflowNode) => {
-    setNodes((nds) => nds.map(node => {
-      if (node.id === selectedNodeId) {
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            flowNode: updatedFlowNode,
-            label: updatedFlowNode.node_name
-          }
-        };
-      }
-      return node;
-    }));
+    if (!selectedNodeId) return;
+    
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === selectedNodeId) {
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              label: updatedFlowNode.node_name,
+              flowNode: updatedFlowNode,
+            },
+          };
+        }
+        return node;
+      })
+    );
+    
     setSelectedNode(updatedFlowNode);
   };
 
@@ -122,7 +188,7 @@ export const FlowEditor = () => {
     
     const newNode: FlowNode = {
       id: nodeId,
-      type: type === "SUPERVISOR" ? 'supervisor' : 'agent',
+      type: reactFlowType,
       position: { 
         x: Math.random() * 300 + 100, 
         y: Math.random() * 300 + 100 
@@ -151,6 +217,10 @@ export const FlowEditor = () => {
     setSelectedNodeId(null);
   };
 
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <div className="flex h-screen">
       <div className="flex-1 h-full relative">
@@ -176,13 +246,23 @@ export const FlowEditor = () => {
           <Background className="dark:bg-gray-900" />
           <Controls className="dark:bg-gray-800 dark:text-white dark:border-gray-700" />
         </ReactFlow>
-        <div className="absolute bottom-4 left-4 z-10 space-x-2">
+        <div className="absolute bottom-4 left-4 z-10 space-x-2 flex">
           <Button onClick={handleExport} variant="outline" className="bg-white/80 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:border-gray-600">
             <Save className="h-4 w-4 mr-2" /> Save Workflow
           </Button>
           <Button onClick={handleClearWorkflow} variant="destructive" className="bg-red-500">
             <Trash2 className="h-4 w-4 mr-2" /> Clear Workflow
           </Button>
+          <Button onClick={triggerFileInput} variant="outline" className="bg-white/80 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:border-gray-600">
+            <Upload className="h-4 w-4 mr-2" /> Load Workflow
+          </Button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            accept=".json" 
+            className="hidden" 
+          />
         </div>
       </div>
       <ConfigPanel 
@@ -199,14 +279,24 @@ export const FlowEditor = () => {
             <pre className="bg-gray-100 dark:bg-gray-900 p-4 rounded-md overflow-auto max-h-96">
               {workflowJson}
             </pre>
-            <Button
-              onClick={handleCopyJson}
-              variant="outline"
-              size="sm"
-              className="absolute top-2 right-2 dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:border-gray-600"
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
+            <div className="absolute top-2 right-2 flex space-x-2">
+              <Button
+                onClick={handleCopyJson}
+                variant="outline"
+                size="sm"
+                className="dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:border-gray-600"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={handleDownloadJson}
+                variant="outline"
+                size="sm"
+                className="dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:border-gray-600"
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowJson(false)} className="dark:bg-gray-800 dark:text-white dark:hover:bg-gray-700 dark:border-gray-600">

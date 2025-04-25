@@ -2,8 +2,12 @@
 export const TOOLS_LIST = [
   "get_order_details_mf",
   "get_cancelled_sip_mf",
-  "get_sip_sop"
 ] as const;
+
+export const SOP_FUNCTION_LIST = [
+  "get_sip_sop",
+] as const;
+
 
 export const HUMAN_NODE_TYPES = [
   "ORDER_PICKER",
